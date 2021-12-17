@@ -1,0 +1,119 @@
+name: policy-defintion
+
+on:
+  workflow_dispatch:
+    inputs:
+      cloud: 
+        description: 'Define the cloud provider in which the platform will be deployed'
+        required: true      
+      environment:
+        description: 'Define environment'     
+        required: true
+      business_unit:
+        description: 'Define business_unit name'    
+        required: true   
+        
+jobs:
+  ## ----------------- NEW POLICY_DEFINITION -------------------------------
+  new-policy-definition:
+    runs-on: ubuntu-latest
+    env: 
+      GIT_PAT: ${{ secrets.PAT }}  
+      GIT_USER: "actions"
+      GIT_MAIL: "actions@iac.com"
+      CLOUD: ${{ github.event.inputs.cloud }}
+      DEVELOPING_ENVIRONMENT: ${{ github.event.inputs.environment }}
+      INFRASTRUCTURE_ENVIRONMENT: ${{ (github.event.inputs.environment == 'dev' || 'pre' || 'int' || 'tst') && 'nonprod' || 'prod' }}
+      BUSINESS_UNIT: ${{ github.event.inputs.business_unit }}
+      COMMON_RESOURCE_GROUP_NAME: ${{ format('rg-common-{0}', (github.event.inputs.environment == 'dev' || 'pre' || 'int' || 'tst') && 'nonprod' || 'prod') }}
+      BACKEND_STORAGE_ACCOUNT_NAME: ${{ format('sa{0}iac{1}', github.event.inputs.business_unit, github.event.inputs.environment) }}
+      
+    steps:
+    - name: Check out the iac-policies repo
+      uses: actions/checkout@v2.3.4
+      with:
+        repository: Kompita/moc-pac
+        token: ${{ secrets.PAT }}  
+        path: Terraform/
+        
+    - name: Configuration files
+      run: |
+        
+        echo "::group::Creating the backend file"
+        mkdir -p live/$CLOUD/multiapps/$PLATFORM_NAME/$MULTIAPP_NAME/backend
+        JSON_STRING=$( jq -n \
+          --arg rg "$COMMON_RESOURCE_GROUP_NAME" \
+          --arg sga "$BACKEND_STORAGE_ACCOUNT_NAME" \
+          --arg con "multiapps" \
+          --arg key "$PLATFORM_NAME/$MULTIAPP_NAME/terraform.tfstate" \
+          '{
+            resource_group_name: $rg, 
+            storage_account_name: $sga, 
+            container_name: $con, 
+            key, $key
+          }' )
+        echo $JSON_STRING > live/$CLOUD/multiapps/$PLATFORM_NAME/$MULTIAPP_NAME/backend/backend.tfvars.json
+        echo "::endgroup::"
+          
+        
+## ----------------- POLICY_DEFINITION DEPLOY -------------------------------
+  multiapp-deploy:
+    runs-on: ubuntu-latest
+    needs: new-policy-definition
+    env: 
+      CLOUD: ${{ github.event.inputs.cloud }}
+      ARM_DATA: ${{ secrets.ARM_SP }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets[format('ARM_SUBSCRIPTION_ID_{0}', github.event.inputs.environment == ('dev' || 'int' || 'pre' || 'tst') && 'nonprod' || 'prod')] }}
+      
+    steps:
+    - name: Check out the iac-policies repo
+      uses: actions/checkout@v2.3.4
+      with:
+        ref: ${{ github.event.inputs.environment }} 
+        path: Terraform/
+        
+    - name: Cloud credentials extraction
+      run: |
+        echo "${ARM_DATA}" > sp.json
+        echo "ARM_CLIENT_ID=$(jq .arm_client_id sp.json --raw-output)" >> $GITHUB_ENV
+        echo "::add-mask::$(jq .arm_client_id sp.json --raw-output)"
+        echo "ARM_CLIENT_SECRET=$(jq .arm_client_secret sp.json --raw-output)" >> $GITHUB_ENV
+        echo "::add-mask::$(jq .arm_client_secret sp.json --raw-output)"
+        echo "ARM_TENANT_ID=$(jq .arm_tenant_id sp.json --raw-output)" >> $GITHUB_ENV
+        echo "::add-mask::$(jq .arm_tenant_id sp.json --raw-output)"
+        
+    - name: Cloud Login
+      run: |   
+        echo "Azure Login" 
+        az login --service-principal --username $ARM_CLIENT_ID --password $ARM_CLIENT_SECRET --tenant $ARM_TENANT_ID
+        ##echo "Switching to the specified subscription"
+        ##--az account set --subscription $ARM_SUBSCRIPTION_ID
+        
+    - name: 'Terraform'
+      id: terraform
+      run: |      
+        cd live/$CLOUD/multiapps/$PLATFORM_NAME/$MULTIAPP_NAME/terraform
+        mv ../custom/terraform/*.tf . || true
+        echo "Terraform Init" 
+        terraform init -no-color -backend-config="../backend/backend.tfvars.json"
+        echo "Terraform Validate" 
+        terraform validate -no-color 
+        echo "::group::Forming terraform plan command sentence"  
+        plan_command="terraform plan -out=planfile -no-color" 
+        echo "Adding the tfvars in tfvars/ folder"
+        varfiles=$(ls tfvars/*.tfvars) 
+        for eachfile in $varfiles
+        do
+          plan_command="${plan_command} -var-file=$eachfile" 
+        done
+        
+        echo "Adding the tfvars in custom/terraform/tfvars/ folder"
+        varfiles=$(ls ../custom/terraform/tfvars/*.tfvars) 
+        for eachfile in $varfiles
+        do
+          plan_command="${plan_command} -var-file=$eachfile" 
+        done
+        echo "::endgroup::"
+        $plan_command
+        echo "Terraform Apply"
+        terraform apply -auto-approve -no-color planfile
