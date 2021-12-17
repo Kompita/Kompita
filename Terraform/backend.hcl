@@ -1,3 +1,3 @@
-workspaces { name = "JesseLoudon-Dev" }
+workspaces { name = "Kompita-dev" }
 hostname     = "app.terraform.io"
-organization = "global-bao"
+organization = "Kompita"
