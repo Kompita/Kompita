@@ -1,11 +1,5 @@
 name: Terraform-CD-Tests
 on:
-  push:
-    branches: [main]
-    paths:
-      - "**.tf"
-  schedule:
-    - cron: "0 0 * * *" #at the end of every day
   workflow_dispatch:
 
 jobs:
@@ -18,7 +12,7 @@ jobs:
       - name: Validate Terraform
         uses: docker://ghcr.io/github/super-linter:slim-v4
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          GITHUB_TOKEN: ${{ secrets.PAT }}
           VALIDATE_ALL_CODEBASE: false
           DEFAULT_BRANCH: main
           VALIDATE_TERRAFORM: true
@@ -28,18 +22,16 @@ jobs:
     env:
       TF_IN_AUTOMATION: true
       TF_INPUT: false
-      ARM_CLIENT_ID: ${{ secrets.SP_GLOBALBAO_ID }}
-      ARM_CLIENT_SECRET: ${{ secrets.SP_GLOBALBAO_SEC }}
-      ARM_SUBSCRIPTION_ID: ${{ secrets.SP_GLOBALBAO_SUB }}
-      ARM_TENANT_ID: ${{ secrets.SP_GLOBALBAO_TEN }}
+      ARM_CLIENT_ID: ${{ secrets.SP_KOMPITA_ID }}
+      ARM_CLIENT_SECRET: ${{ secrets.SP_KOMPITA_SEC }}
+      ARM_SUBSCRIPTION_ID: ${{ secrets.SP_KOMPITA_SUB }}
+      ARM_TENANT_ID: ${{ secrets.SP_KOMPITA_TEN }}
     needs: Terraform-ValidationTests
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v2
       - uses: hashicorp/setup-terraform@v1.2.1
-        with:
-          cli_config_credentials_token: ${{ secrets.TF_TOKEN }}
-          terraform_version: 1.0.3
+        
 
       - name: Terraform Init
         id: init
