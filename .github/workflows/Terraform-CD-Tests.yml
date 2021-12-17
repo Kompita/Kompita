@@ -35,7 +35,7 @@ jobs:
 
       - name: Terraform Init
         id: init
-        run: terraform init -backend-config=backend.hcl -no-color
+        run: terraform init -no-color
         working-directory: Terraform
 
       - name: Terraform Apply

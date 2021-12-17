@@ -28,6 +28,7 @@ jobs:
       ARM_TENANT_ID: ${{ secrets.SP_KOMPITA_TEN }}
     needs: Terraform-ValidationTests
     runs-on: ubuntu-latest
+    
     steps:
       - uses: actions/checkout@v2
       - uses: hashicorp/setup-terraform@v1.2.1
@@ -39,7 +40,7 @@ jobs:
 
       - name: Terraform Init
         id: init
-        run: terraform init -backend-config=backend.hcl -no-color
+        run: terraform init -no-color
         working-directory: Terraform
 
       - name: Terraform Validate
